@@ -51,6 +51,12 @@ object Optimizing extends App {
     val timings = measurements.map(t => t._2)
     val mae = measurements(0)._1
 
+    val userAverages = computeUserAverages(train)
+    val processedRatings = preProcessRatings(train, userAverages)
+    val sims = calculateCosineSimilarity(processedRatings)
+    //val knn_sims = knn(0, 10, sims)
+    //println("u1 sim u1: " + )
+    println(sims(0, 0 until 10))
     // Save answers as JSON
     def printToFile(content: String,
                     location: String = "./answers.json") =

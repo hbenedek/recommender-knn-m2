@@ -51,12 +51,15 @@ object Optimizing extends App {
     val timings = measurements.map(t => t._2)
     val mae = measurements(0)._1
 
-    val userAverages = computeUserAverages(train)
+    val userAverages = computeUserAverages2(train)
     val processedRatings = preProcessRatings(train, userAverages)
     val sims = calculateCosineSimilarity(processedRatings)
-    //val knn_sims = knn(0, 10, sims)
-    //println("u1 sim u1: " + )
-    println(sims(0, 0 until 10))
+    val knnSims = calculateKnnSimilarity(10, sims)
+    
+    val predictor = createKnnPredictor(train, 10)
+
+    val maeKnn = evaluatePredictor(test, predictor)
+
     // Save answers as JSON
     def printToFile(content: String,
                     location: String = "./answers.json") =
@@ -78,12 +81,12 @@ object Optimizing extends App {
             "num_measurements" -> ujson.Num(conf.num_measurements())
           ),
           "BR.1" -> ujson.Obj(
-            "1.k10u1v1" -> ujson.Num(0.0),
-            "2.k10u1v864" -> ujson.Num(0.0),
-            "3.k10u1v886" -> ujson.Num(0.0),
-            "4.PredUser1Item1" -> ujson.Num(0.0),
-            "5.PredUser327Item2" -> ujson.Num(0.0),
-            "6.Mae" -> ujson.Num(0.0)
+            "1.k10u1v1" -> ujson.Num(knnSims(0,0)),
+            "2.k10u1v864" -> ujson.Num(knnSims(0,863)),
+            "3.k10u1v886" -> ujson.Num(knnSims(0,885)),
+            "4.PredUser1Item1" -> ujson.Num(predictor(0,0)),
+            "5.PredUser327Item2" -> ujson.Num(predictor(326,1)),
+            "6.Mae" -> ujson.Num(maeKnn)
           ),
           "BR.2" ->  ujson.Obj(
             "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double

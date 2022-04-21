@@ -128,14 +128,21 @@ package object predictions
     }
     sums.zip(denominators).map{case (a, b) => a/b} 
   }
-  /*
-  def computeAllUserAverages(x: CSCMatrix[Double]): DenseVector[Double] = {
-    val nonZeros = x.toDense(*,::).map(x => x.foldLeft(0)((acc, curr)=> if (curr!=0) acc + 1 else acc)).map(x => x.toDouble)
-    val sums: DenseVector[Double] = sum(x.toDense(*,::)).map(x => x.toDouble)
+  
+  def computeUserAverages2(x: CSCMatrix[Double]): DenseVector[Double] = {
+    val nonZeros = x.toDense(*,::).map(x => x.foldLeft(0.0)((acc, curr)=> if (curr!=0) acc + 1 else acc)).map(x => x.toDouble)
+    val sums = sum(x.toDense(*,::)).map(x => x.toDouble)
     sums / nonZeros
-  }*/
+  }
 
-  def preProcessRatings(x: CSCMatrix[Double], averages: Array[Double]): CSCMatrix[Double] ={
+  def normalizeRatings(x: CSCMatrix[Double], averages: DenseVector[Double]): CSCMatrix[Double] = {
+    for ((k,v) <- x.activeIterator){
+      x(k._1, k._2) = normalizedDeviation(v, averages(k._1))
+    }
+    x
+  }
+
+  def preProcessRatings(x: CSCMatrix[Double], averages: DenseVector[Double]): CSCMatrix[Double] ={
     for ((k,v) <- x.activeIterator){
       x(k._1, k._2) = normalizedDeviation(v, averages(k._1))
     }
@@ -147,21 +154,52 @@ package object predictions
   }
 
   def calculateCosineSimilarity(x: CSCMatrix[Double]): DenseMatrix[Double] = {
-      (x * x.t).toDense
+    (x * x.t).toDense
   } 
 
-  def knn(u: Int, k: Int, sims: DenseMatrix[Double]): Array[Double] = {
-    val knn = sims(u,::).t.toArray.sorted(Ordering.Double.reverse).slice(1,k + 1)
+  def knn(u: Int, k: Int, sims: DenseMatrix[Double]): Array[Int] = {
+    val knn = sims(u,::).t.toArray.zipWithIndex.sortBy(_._1).takeRight(k).map(_._2).tail
     knn
   }
 
-  def calculateKnnSimilarity(k: Int, sims: DenseMatrix[Double]) = {
-    (0 to sims.rows).map(u => sims(u,::).t.map(v => if (knn(u, k, sims).contains(v)) v else 0.0))
+  def calculateKnnSimilarity(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
+    for (u <- 0 until sims.rows){
+      for(i <- 0 until sims.cols) {
+        if (!knn(u, k, sims).contains(i)) sims(u,i) = 0.0
+      }
+    }
+    sims
   }
 
+  def calculateItemDevs(x: CSCMatrix[Double], sims: DenseMatrix[Double]): DenseMatrix[Double] = {
+    val y = DenseMatrix.zeros[Double](x.rows,x.cols)
+    val ratings = x.toDense
+    for (u <- 0 until y.rows){
+      for(i <- 0 until y.cols) {
+        y(u, i) = sims(u,::) * ratings(::,i) / sum(sims(u,::).t.map(x => math.abs(x)))
+     }
+    }
+    y
+  }
 
+  def createKnnPredictor(x:CSCMatrix[Double], k: Int) : (Int, Int)=>Double = {
+    val userAvgs = computeUserAverages2(x)
+    val nomralizedRatings = normalizeRatings(x, userAvgs)
+    val preprocessedRatings = preProcessRatings(x, userAvgs)
 
+    val simsCos = calculateCosineSimilarity(preprocessedRatings)
+    val simsKnn = calculateKnnSimilarity(k, simsCos)
+    val itemDevs = calculateItemDevs(nomralizedRatings, simsKnn)
+
+    (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
+  }
+
+  def evaluatePredictor(test: CSCMatrix[Double], predictor: (Int, Int) => Double): Double = {
+    val errors = for ((k,v) <- test.activeIterator) yield (predictor(k._1, k._2) - v).abs
+    errors.reduce(_ + _) / errors.size
+  }
 }
+
 
 
 

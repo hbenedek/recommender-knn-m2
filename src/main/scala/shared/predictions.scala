@@ -158,6 +158,7 @@ package object predictions
   } 
 
   def knn(u: Int, k: Int, sims: DenseMatrix[Double]): Array[Int] = {
+    // returns the indexes of the k largest element in a list (excluding self similarity)
     val knn = sims(u,::).t.toArray.zipWithIndex.sortBy(_._1).takeRight(k).map(_._2).tail
     knn
   }
@@ -165,6 +166,7 @@ package object predictions
   def calculateKnnSimilarity(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
     for (u <- 0 until sims.rows){
       for(i <- 0 until sims.cols) {
+        // if i is not an index of the largest similarity coefficients it is changed to 0
         if (!knn(u, k, sims).contains(i)) sims(u,i) = 0.0
       }
     }
@@ -173,7 +175,7 @@ package object predictions
 
   def calculateItemDevs(x: CSCMatrix[Double], sims: DenseMatrix[Double]): DenseMatrix[Double] = {
     val y = DenseMatrix.zeros[Double](x.rows,x.cols)
-    val ratings = x.toDense
+    val ratings = x.toDense //this should be the normalized ratings
     for (u <- 0 until y.rows){
       for(i <- 0 until y.cols) {
         y(u, i) = sims(u,::) * ratings(::,i) / sum(sims(u,::).t.map(x => math.abs(x)))

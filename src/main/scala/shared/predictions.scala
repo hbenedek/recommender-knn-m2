@@ -163,6 +163,19 @@ package object predictions
     knn
   }
 
+  //Optimised version of the function below. Once we confirm that
+  //it works as intended we can get rid of the other
+  def calculateKnnSimilarityFast(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
+    for (u <- 0 until sims.rows){
+      val userSims = sims(u, ::).t
+      val userKnn = argtopk(userSims,k+1).toArray.slice(1, k+1)
+      for (v <- 0 until sims.cols) {
+        if (!userKnn.contains(v)) sims(u, v) = 0.0
+      }
+    }
+    sims
+  }
+
   def calculateKnnSimilarity(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
     for (u <- 0 until sims.rows){
       for(i <- 0 until sims.cols) {
@@ -186,12 +199,13 @@ package object predictions
 
   def createKnnPredictor(x:CSCMatrix[Double], k: Int) : (Int, Int)=>Double = {
     val userAvgs = computeUserAverages2(x)
-    val nomralizedRatings = normalizeRatings(x, userAvgs)
+    val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings(x, userAvgs)
 
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
-    val simsKnn = calculateKnnSimilarity(k, simsCos)
-    val itemDevs = calculateItemDevs(nomralizedRatings, simsKnn)
+    val simsKnn = calculateKnnSimilarityFast(k, simsCos)
+    //val simsKnn = calculateKnnSimilarity(k, simsCos)
+    val itemDevs = calculateItemDevs(normalizedRatings, simsKnn)    
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }

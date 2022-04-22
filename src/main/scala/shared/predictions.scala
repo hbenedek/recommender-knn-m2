@@ -5,6 +5,7 @@ import breeze.numerics._
 import scala.io.Source
 import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.SparkContext
+import ujson.Arr
 
 package object predictions
 {
@@ -113,7 +114,7 @@ package object predictions
 
 
   def globalAvg(x: CSCMatrix[Double]): Double = {
-    sum(x) / x.size
+    sum(x) / x.findAll(r => r != 0.0).size
   }
 
   def computeUserAverages(ratings: CSCMatrix[Double]): Array[Double] = {
@@ -124,7 +125,7 @@ package object predictions
       val row = k._1
       val col = k._2
       sums(row) += v
-      denominators(row) += 1
+      denominators(row) += 1 
     }
     sums.zip(denominators).map{case (a, b) => a/b} 
   }
@@ -199,13 +200,13 @@ package object predictions
 
   def createKnnPredictor(x:CSCMatrix[Double], k: Int) : (Int, Int)=>Double = {
     val userAvgs = computeUserAverages2(x)
-    val normalizedRatings = normalizeRatings(x, userAvgs)
-    val preprocessedRatings = preProcessRatings(x, userAvgs)
+    val normalizedRatings = normalizeRatings(x.copy, userAvgs)
+    val preprocessedRatings = preProcessRatings(x.copy, userAvgs)
 
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos)
     //val simsKnn = calculateKnnSimilarity(k, simsCos)
-    val itemDevs = calculateItemDevs(normalizedRatings, simsKnn)    
+    val itemDevs = calculateItemDevs(normalizedRatings, simsKnn)
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }

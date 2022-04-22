@@ -52,13 +52,13 @@ object Optimizing extends App {
     val mae = measurements(0)._1
 
     val userAverages = computeUserAverages2(train)
-    val processedRatings = preProcessRatings(train.copy, userAverages)
+    val normalizedRatings = normalizeRatings(train, userAverages)
+    val processedRatings = preProcessRatings(train)
     val sims = calculateCosineSimilarity(processedRatings)
-    println(sims(0, 0 until 10))
-    println("Calculating kNN sims...")
+    //println("Calculating kNN sims...")
     val knnSims = calculateKnnSimilarityFast(10, sims)
     
-    println("Creating predictor...")
+    //println("Creating predictor...")
     val predictor = createKnnPredictor(train, 10)
 
     val maeKnn = evaluatePredictor(test, predictor)

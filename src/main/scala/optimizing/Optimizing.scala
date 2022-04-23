@@ -46,23 +46,23 @@ object Optimizing extends App {
     val test = loadSpark(sc, conf.test(), conf.separator(), conf.users(), conf.movies())
 
     val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-      0.0
+      val predictor = createKnnPredictor(train.copy, 10)
+      val maeKnn = evaluatePredictor(test, predictor)
+      maeKnn
     }))
     val timings = measurements.map(t => t._2)
     val mae = measurements(0)._1
 
     val userAverages = computeUserAverages2(train)
     val normalizedRatings = normalizeRatings(train, userAverages)
-    val processedRatings = preProcessRatings(train)
+    val processedRatings = preProcessRatings(normalizedRatings)
     val sims = calculateCosineSimilarity(processedRatings)
-    //println("Calculating kNN sims...")
+    println("Calculating kNN sims...")
     val knnSims = calculateKnnSimilarityFast(10, sims)
-    
-    //println("Creating predictor...")
+    println("Creating predictor...")
     val predictor = createKnnPredictor(train, 10)
-
     val maeKnn = evaluatePredictor(test, predictor)
-
+    
     // Save answers as JSON
     def printToFile(content: String,
                     location: String = "./answers.json") =

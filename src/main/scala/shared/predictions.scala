@@ -144,13 +144,14 @@ package object predictions
   }
 
   def preProcessRatings(x: CSCMatrix[Double]): DenseMatrix[Double] ={
-    //val y = new CSCMatrix.Builder[Double](rows=x.rows, cols=x.cols).result
-    //val itemNorms = sqrt(sum(x.map(x => (x * x)).toDense, Axis._1))
-    //for ((k,v) <- x.activeIterator){
-    //  y(k._1, k._2) = v / itemNorms(k._1)
-    //}
-    //y.toDense
-    normalize(x.toDense, Axis._1, 2)
+    val y = new CSCMatrix.Builder[Double](rows=x.rows, cols=x.cols).result
+    val itemNorms = sqrt(sum(x.map(x => (x * x)).toDense, Axis._1))
+    for ((k,v) <- x.activeIterator){
+      y(k._1, k._2) = v / itemNorms(k._1)
+    }
+    y.toDense
+    //normalize(x.toDense, Axis._1, 2)
+    
   }
 
   def calculateCosineSimilarity(x: DenseMatrix[Double]): DenseMatrix[Double] = {
@@ -185,8 +186,10 @@ package object predictions
     sims
   }
 
-  def calculateItemDevs(x: CSCMatrix[Double], sims: DenseMatrix[Double]): DenseMatrix[Double] = {
-    normalize(sims, Axis._0, 1) * x.toDense
+  def calculateItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: DenseMatrix[Double]): DenseMatrix[Double] = {
+    val indicator = x.toDense.map(v => if (v != 0.0) 1.0 else 0.0)
+    val itemDevs = (sims * xNormalized.toDense) /:/ (abs(sims) * indicator)
+    itemDevs.map(v => if (v.isNaN()) 0.0 else v)
     }
 
   def createKnnPredictor(x: CSCMatrix[Double], k: Int) : (Int, Int) => Double = {
@@ -196,7 +199,7 @@ package object predictions
 
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos)
-    val itemDevs = calculateItemDevs(normalizedRatings, simsKnn)    
+    val itemDevs = calculateItemDevs(normalizedRatings, x, simsKnn)    
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }

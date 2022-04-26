@@ -193,7 +193,7 @@ package object predictions
     itemDevs.map(v => if (v.isNaN()) 0.0 else v)
     }
 
-  def createKnnPredictor(x: CSCMatrix[Double], k: Int) : (Int, Int) => Double = {
+  def fitKnnPredictor(x: CSCMatrix[Double], k: Int) : (Int, Int) => Double = {
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings(normalizedRatings)
@@ -208,6 +208,28 @@ package object predictions
   def evaluatePredictor(test: CSCMatrix[Double], predictor: (Int, Int) => Double): Double = {
     val errors = (for ((k,v) <- test.activeIterator) yield (predictor(k._1, k._2) - v).abs).toList
     errors.reduce(_ + _) / errors.size
+  }
+
+   /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Part EK
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  def fitParallelKnn(x: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
+    val userAvgs = computeUserAverages2(x)
+    val normalizedRatings = normalizeRatings(x, userAvgs)
+    val preprocessedRatings = preProcessRatings(normalizedRatings)
+
+    val nbUsers = x.rows
+    val broadcast = sc.broadcast(preprocessedRatings)
+   
+    val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
+      val sims = broadcast.value * (broadcast.value.t(::,u))
+      val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
+     } yield knn).collect().flatMap(x => x)
+    
+    val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)
+    for ((u,v,s) <- topks) {builder.add(u, v, s)}
+    builder.result
   }
 }
 

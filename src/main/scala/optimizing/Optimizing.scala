@@ -46,7 +46,7 @@ object Optimizing extends App {
     val test = loadSpark(sc, conf.test(), conf.separator(), conf.users(), conf.movies())
 
     val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-      val predictor = createKnnPredictor(train.copy, 10)
+      val predictor = fitKnnPredictor(train.copy, 10)
       val maeKnn = evaluatePredictor(test, predictor)
       maeKnn
     }))
@@ -60,7 +60,7 @@ object Optimizing extends App {
     println("Calculating kNN sims...")
     val knnSims = calculateKnnSimilarityFast(10, sims)
     println("Creating predictor...")
-    val predictor = createKnnPredictor(train, 10)
+    val predictor = fitKnnPredictor(train, 10)
     val maeKnn = evaluatePredictor(test, predictor)
     
     // Save answers as JSON

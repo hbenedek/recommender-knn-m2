@@ -56,11 +56,17 @@ object Exact {
     val test = loadSpark(sc, conf.test(), conf.separator(), conf.users(), conf.movies())
 
     val measurements = (1 to scala.math.max(1,conf.num_measurements())).map(_ => timingInMs( () => {
-      0
+      val predictor = parallelKnnPredictor(train.copy, sc, 10)
+      val mae = evaluatePredictor(test, predictor)
+      mae
     }))
     val timings = measurements.map(_._2)
+    val mae = measurements(0)._1
 
-    val sims = fitParallelKnn(train, sc, 10)
+    val userAverages = computeUserAverages2(train)
+    val normalizedRatings = normalizeRatings(train, userAverages)
+    val sims = fitParallelKnn(normalizedRatings, sc, 10)
+    val predictor = parallelKnnPredictor(train.copy, sc, 10)
     
     // Save answers as JSON
     def printToFile(content: String,
@@ -91,9 +97,9 @@ object Exact {
             "1.knn_u1v1" -> ujson.Num(sims(0,0)),
             "2.knn_u1v864" -> ujson.Num(sims(0,863)),
             "3.knn_u1v886" -> ujson.Num(sims(0,885)),
-            "4.PredUser1Item1" -> ujson.Num(0.0),
-            "5.PredUser327Item2" -> ujson.Num(0.0),
-            "6.Mae" -> ujson.Num(0.0)
+            "4.PredUser1Item1" -> ujson.Num(predictor(0,0)),
+            "5.PredUser327Item2" -> ujson.Num(predictor(326,1)),
+            "6.Mae" -> ujson.Num(mae)
           ),
           "EK.2" ->  ujson.Obj(
             "average (ms)" -> ujson.Num(mean(timings)), // Datatype of answer: Double

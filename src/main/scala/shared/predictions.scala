@@ -214,12 +214,9 @@ package object predictions
   // Part EK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  def fitParallelKnn(x: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
-    val userAvgs = computeUserAverages2(x)
-    val normalizedRatings = normalizeRatings(x, userAvgs)
+  def fitParallelKnn(normalizedRatings: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
     val preprocessedRatings = preProcessRatings(normalizedRatings)
-
-    val nbUsers = x.rows
+    val nbUsers = normalizedRatings.rows
     val broadcast = sc.broadcast(preprocessedRatings)
    
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
@@ -230,6 +227,16 @@ package object predictions
     val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)
     for ((u,v,s) <- topks) {builder.add(u, v, s)}
     builder.result
+  }
+
+  def parallelKnnPredictor(ratings: CSCMatrix[Double], sc: SparkContext, k: Int) : (Int, Int) => Double = {
+    val userAvgs = computeUserAverages2(ratings)
+    val normalizedRatings = normalizeRatings(ratings, userAvgs)
+
+    val simsKnn = fitParallelKnn(normalizedRatings, sc, k).toDense
+    val itemDevs = calculateItemDevs(normalizedRatings, ratings, simsKnn)    
+
+    (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }
 }
 

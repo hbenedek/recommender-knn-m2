@@ -155,6 +155,15 @@ package object predictions
     
   }
 
+  def preProcessRatings2(x: CSCMatrix[Double]): CSCMatrix[Double] ={
+    val y = new CSCMatrix.Builder[Double](rows=x.rows, cols=x.cols).result
+    val itemNorms = sqrt(sum(x.map(x => (x * x)).toDense, Axis._1))
+    for ((k,v) <- x.activeIterator){
+      y(k._1, k._2) = v / itemNorms(k._1)
+    }
+    y
+  }
+
   def calculateCosineSimilarity(x: DenseMatrix[Double]): DenseMatrix[Double] = {
     x * x.t
   } 
@@ -214,13 +223,12 @@ package object predictions
   // Part EK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  def fitParallelKnn(normalizedRatings: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
-    val preprocessedRatings = preProcessRatings(normalizedRatings)
-    val nbUsers = normalizedRatings.rows
-    val broadcast = sc.broadcast(preprocessedRatings)
+  def calculateParallelKnn(xPreprocessed: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
+    val nbUsers = xPreprocessed.rows
+    val broadcast = sc.broadcast(xPreprocessed)
    
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
-      val sims = broadcast.value * (broadcast.value.t(::,u))
+      val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
       val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
      } yield knn).collect().flatMap(x => x)
     
@@ -229,12 +237,35 @@ package object predictions
     builder.result
   }
 
-  def parallelKnnPredictor(ratings: CSCMatrix[Double], sc: SparkContext, k: Int) : (Int, Int) => Double = {
-    val userAvgs = computeUserAverages2(ratings)
-    val normalizedRatings = normalizeRatings(ratings, userAvgs)
+  def calculateParallelItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: CSCMatrix[Double], sc: SparkContext): DenseMatrix[Double] = {
+    val xBroadcast = sc.broadcast(x)
+    val xNormalizedBroadcast = sc.broadcast(xNormalized)
+    val nbItems = x.cols
+    val nbUsers = x.rows
+    val iNormalized = xNormalizedBroadcast.value.toDense(::,1)
+    val allDevs = sc.parallelize(0 to nbItems - 1).mapPartitions(iter => for {i <- iter;
+      val iIndicator = xBroadcast.value.toDense(::,i).map(v => if (v != 0.0) 1.0 else 0.0)
+      val iNormalized = xNormalizedBroadcast.value.toDense(::,i)
+      val iDevs = ((sims * iNormalized) /:/ (abs(sims) * iIndicator)).toArray.zipWithIndex.map{case (d,u) => (u,i,d)}
+    } yield iDevs).collect().flatMap(x => x)
 
-    val simsKnn = fitParallelKnn(normalizedRatings, sc, k).toDense
-    val itemDevs = calculateItemDevs(normalizedRatings, ratings, simsKnn)    
+    val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbItems)
+    for ((u,i,d) <- allDevs) {builder.add(u, i, d)}
+    builder.result
+
+    val indicator = x.toDense.map(v => if (v != 0.0) 1.0 else 0.0)
+    val itemDevs = (sims * xNormalized.toDense) /:/ (abs(sims) * indicator)
+    itemDevs.map(v => if (v.isNaN()) 0.0 else v)
+    }
+
+   def fitParallelKnn(x: CSCMatrix[Double], sc: SparkContext, k: Int): (Int, Int) => Double ={
+    val userAvgs = computeUserAverages2(x)
+    val normalizedRatings = normalizeRatings(x, userAvgs)
+    val preprocessedRatings = preProcessRatings2(normalizedRatings)
+
+    val knnSims = calculateParallelKnn(preprocessedRatings, sc, k)
+    //val itemDevs = calculateParallelItemDevs(normalizedRatings, x, knnSims, sc)
+    val itemDevs = calculateItemDevs(normalizedRatings, x, knnSims.toDense)
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }

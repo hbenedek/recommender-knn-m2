@@ -237,7 +237,7 @@ package object predictions
     builder.result
   }
 
-  def calculateParallelItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: CSCMatrix[Double], sc: SparkContext): DenseMatrix[Double] = {
+  def calculateParallelItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: CSCMatrix[Double], sc: SparkContext): CSCMatrix[Double] = {
     val xBroadcast = sc.broadcast(x)
     val xNormalizedBroadcast = sc.broadcast(xNormalized)
     val nbItems = x.cols
@@ -252,10 +252,6 @@ package object predictions
     val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbItems)
     for ((u,i,d) <- allDevs) {builder.add(u, i, d)}
     builder.result
-
-    val indicator = x.toDense.map(v => if (v != 0.0) 1.0 else 0.0)
-    val itemDevs = (sims * xNormalized.toDense) /:/ (abs(sims) * indicator)
-    itemDevs.map(v => if (v.isNaN()) 0.0 else v)
     }
 
    def fitParallelKnn(x: CSCMatrix[Double], sc: SparkContext, k: Int): (Int, Int) => Double ={

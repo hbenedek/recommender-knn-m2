@@ -1,5 +1,8 @@
 .DS_Store
 .bsp
+.bloop
+.metals
+.vscode
 **/*.swp
 data/.DS_Store
 data/ml-100k
@@ -10,3 +13,6 @@ src/main/scala/project/
 src/main/scala/target/
 target/
 logs/
+project/metals.sbt
+*.json
+data/ml-1m

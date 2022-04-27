@@ -10,3 +10,11 @@ src/main/scala/project/
 src/main/scala/target/
 target/
 logs/
+.bloop/
+.metals/
+.vscode/
+data/ml-1m/
+exact-100k-4.json
+optimizing-100k.json
+project/.bloop/
+project/metals.sbt

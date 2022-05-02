@@ -6,6 +6,8 @@ import scala.io.Source
 import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.SparkContext
 import ujson.Arr
+import java.io.File
+
 
 package object predictions
 {
@@ -169,7 +171,9 @@ package object predictions
   //it works as intended we can get rid of the other
   def calculateKnnSimilarityFast(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
     for (u <- 0 until sims.rows){
-      val userKnn = argtopk(sims(u, ::).t,k+1).toArray.slice(1, k + 1)
+      val row = sims(u, ::).t.toArray.zipWithIndex
+      val userKnn = row.sortWith(_._1 > _._1).slice(1, k+1).map(v => v._2)
+      //val userKnn = argtopk(sims(u, ::).t,k+1).toArray.slice(1, k + 1)
       for (v <- 0 until sims.rows) {
         if (!userKnn.contains(v)) sims(u, v) = 0.0
       }
@@ -199,7 +203,7 @@ package object predictions
     val preprocessedRatings = preProcessRatings(normalizedRatings)
 
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
-    val simsKnn = calculateKnnSimilarityFast(k, simsCos)
+    val simsKnn = calculateKnnSimilarityFast(k, simsCos.copy)
     val itemDevs = calculateItemDevs(normalizedRatings, x, simsKnn)    
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
@@ -210,7 +214,7 @@ package object predictions
     errors.reduce(_ + _) / errors.size
   }
 
-   /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Part EK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 

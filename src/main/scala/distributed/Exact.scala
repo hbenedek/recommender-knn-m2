@@ -56,17 +56,19 @@ object Exact {
     val test = loadSpark(sc, conf.test(), conf.separator(), conf.users(), conf.movies())
 
     val measurements = (1 to scala.math.max(1,conf.num_measurements())).map(_ => timingInMs( () => {
-      val predictor = parallelKnnPredictor(train.copy, sc, 10)
+      val predictor = fitParallelKnn(train.copy, sc, 10)
       val mae = evaluatePredictor(test, predictor)
       mae
     }))
     val timings = measurements.map(_._2)
     val mae = measurements(0)._1
 
-    val userAverages = computeUserAverages2(train)
-    val normalizedRatings = normalizeRatings(train, userAverages)
-    val sims = fitParallelKnn(normalizedRatings, sc, 10)
-    val predictor = parallelKnnPredictor(train.copy, sc, 10)
+    val userAvgs = computeUserAverages2(train)
+    val normalizedRatings = normalizeRatings(train, userAvgs)
+    val preprocessedRatings = preProcessRatings2(normalizedRatings)
+
+    val sims = calculateParallelKnn(preprocessedRatings, sc, 10)
+    val predictor = fitParallelKnn(train.copy, sc, 10)
     
     // Save answers as JSON
     def printToFile(content: String,

@@ -232,8 +232,10 @@ package object predictions
     val broadcast = sc.broadcast(xPreprocessed)
    
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
+      //val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
+      //val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
       val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
-      val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
+      val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (u, v._2, sims(v._2)))
      } yield knn).collect().flatMap(x => x)
     
     val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)

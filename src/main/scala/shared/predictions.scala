@@ -271,6 +271,57 @@ package object predictions
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Part AK
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  def fitApproximateKnn(x: CSCMatrix[Double], k: Int, replication: Int, partition: Int): (Int, Int) => Double ={
+    val userAvgs = computeUserAverages2(x)
+    val normalizedRatings = normalizeRatings(x, userAvgs)
+    val preprocessedRatings = preProcessRatings2(normalizedRatings)
+
+    // here comes the new part: instead of calculating exact knns we return the approximated matrix
+    // this is the only part which changes in the code
+    val approxKnnSims = calculateApproximateKnn(preprocessedRatings, k, replication, partition)
+    val itemDevs = calculateItemDevs(normalizedRatings, x, approxKnnSims.toDense)
+    (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
+  }
+
+  def calculateApproximateKnn(preprocessed: CSCMatrix[Double], k: Int, replication: Int, nbPartitions: Int): CSCMatrix[Double] = {
+     val nbUsers = preprocessed.rows
+     // we use the practitioner function and iterate through the partitions
+     // in each partition we calculate cosine then knn similarly as we did before
+     // NOTE: i tihnk here we should also aim for parallelization, not sure how to do that though
+     val partitioned = partitionUsers(nbUsers, nbPartitions, replication)
+     val knns = for {partition <- partitioned;
+        val slice = preprocessed.toDense(partition.toSeq, ::).toDenseMatrix
+        val cosSims = calculateCosineSimilarity(slice)
+        // ideally this coda below should return a list of (u,v, similarity) for each u in partition
+        val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
+                                                                .toArray
+                                                                .zipWithIndex
+                                                                .sortWith(_._1 > _._1)
+                                                                .slice(1, k+1)
+                                                                .map(v => (u, v._2, v._1))).flatMap(x => x)
+     } yield knn
+     // we need to merge all partitions and keep the top k elements from all users
+     // so we group by user1 and somehow with clever index manipulation keep the k nearest neighbourss again
+    val flattened = knns.flatMap(x => x)
+                        .groupBy(x => x._1)
+                        .map(x => (x._1, x._2.map(y => (y._2, y._3))
+                                                .toList
+                                                .sortWith(_._2 > _._2)
+                                                .slice(1, k+1)
+                                                .map(z => (x._1, z._1, z._2))))
+                        .map(_._2)
+                        .flatMap(x => x)
+  
+    // in the end we build the sparse matrix out of the tuples similarly as before
+    val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)
+    for ((u,v,s) <- flattened) {builder.add(u, v, s)}
+    builder.result
+  }
 }
 
 

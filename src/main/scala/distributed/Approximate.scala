@@ -66,8 +66,9 @@ object Approximate {
     )
     val measurements = (1 to scala.math.max(1,conf.num_measurements()))
       .map(_ => timingInMs( () => {
-      // Use partitionedUsers here
-      0.0
+      val predictor = fitApproximateKnn(train, conf.k(), conf.replication(), conf.partitions())
+      val mae = evaluatePredictor(test, predictor)
+      mae
     }))
     val mae = measurements(0)._1
     val timings = measurements.map(_._2)

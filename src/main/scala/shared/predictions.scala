@@ -211,8 +211,10 @@ package object predictions
     val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings(normalizedRatings)
 
+    val t1 = System.nanoTime()
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos.copy)
+    println("KNN time: " + (System.nanoTime()-t1))
     val itemDevs = calculateItemDevs(normalizedRatings, x, simsKnn)    
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
@@ -229,17 +231,30 @@ package object predictions
 
   def calculateParallelKnn(xPreprocessed: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
     val nbUsers = xPreprocessed.rows
-    val broadcast = sc.broadcast(xPreprocessed)
-   
+    val broadcast = sc.broadcast(xPreprocessed.toDense)
+
+    /* //Slightly different way. This way seems to use up less memory, but doesn't improve time
+    val topks = sc.parallelize(0 to nbUsers - 1).map(u => {
+      val r = broadcast.value
+      val sims = r * r.t(::,u)
+      val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (v._2, sims(v._2)))
+      (u, knn)
+    }).collect()*/
+
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
       //val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
       //val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
-      val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
+      val r = broadcast.value
+      val sims = r * r.t(::,u)
       val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (u, v._2, sims(v._2)))
      } yield knn).collect().flatMap(x => x)
     
     val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)
     for ((u,v,s) <- topks) {builder.add(u, v, s)}
+    /*
+    for ((u, ns) <- topks) {
+      ns.map{case (v, s) => builder.add(u, v, s)}
+    }*/
     builder.result
   }
 

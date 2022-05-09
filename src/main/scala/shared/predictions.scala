@@ -210,7 +210,6 @@ package object predictions
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings(normalizedRatings)
-
     val t1 = System.nanoTime()
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos.copy)
@@ -233,40 +232,33 @@ package object predictions
     val nbUsers = xPreprocessed.rows
     val broadcast = sc.broadcast(xPreprocessed.toDense)
 
-    /* //Slightly different way. This way seems to use up less memory, but doesn't improve time
+    /*//Slightly different way. This way seems to use up less memory, but doesn't improve time
     val topks = sc.parallelize(0 to nbUsers - 1).map(u => {
       val r = broadcast.value
       val sims = r * r.t(::,u)
-      val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (v._2, sims(v._2)))
-      (u, knn)
-    }).collect()*/
+      val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (u, v._2, sims(v._2)))
+      knn
+    }).collect().flatMap(x=>x)*/
 
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
-      //val sims = broadcast.value * (broadcast.value.toDense.t(::,u))
-      //val knn = argtopk(sims, k + 1).toArray.slice(1, k + 1).map(v => (u, v, sims(v)))
       val r = broadcast.value
       val sims = r * r.t(::,u)
       val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (u, v._2, sims(v._2)))
-     } yield knn).collect().flatMap(x => x)
+    } yield knn).collect().flatMap(x => x)
     
     val builder = new CSCMatrix.Builder[Double](rows=nbUsers, cols=nbUsers)
     for ((u,v,s) <- topks) {builder.add(u, v, s)}
-    /*
-    for ((u, ns) <- topks) {
-      ns.map{case (v, s) => builder.add(u, v, s)}
-    }*/
     builder.result
   }
 
   def calculateParallelItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: CSCMatrix[Double], sc: SparkContext): CSCMatrix[Double] = {
-    val xBroadcast = sc.broadcast(x)
-    val xNormalizedBroadcast = sc.broadcast(xNormalized)
+    val xBroadcast = sc.broadcast(x.toDense)
+    val xNormalizedBroadcast = sc.broadcast(xNormalized.toDense)
     val nbItems = x.cols
     val nbUsers = x.rows
-    val iNormalized = xNormalizedBroadcast.value.toDense(::,1)
     val allDevs = sc.parallelize(0 to nbItems - 1).mapPartitions(iter => for {i <- iter;
-      val iIndicator = xBroadcast.value.toDense(::,i).map(v => if (v != 0.0) 1.0 else 0.0)
-      val iNormalized = xNormalizedBroadcast.value.toDense(::,i)
+      val iIndicator = xBroadcast.value(::,i).map(v => if (v != 0.0) 1.0 else 0.0)
+      val iNormalized = xNormalizedBroadcast.value(::,i)
       val iDevs = ((sims * iNormalized) /:/ (abs(sims) * iIndicator)).toArray.zipWithIndex.map{case (d,u) => (u,i,d)}
     } yield iDevs).collect().flatMap(x => x)
 

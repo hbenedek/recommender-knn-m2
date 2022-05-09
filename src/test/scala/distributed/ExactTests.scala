@@ -34,22 +34,31 @@ class ExactTests extends AnyFunSuite with BeforeAndAfterAll {
    // decimal after the (floating) point, on data/ml-100k/u2.base (as loaded above).
    test("kNN predictor with k=10") { 
 
-     // Similarity between user 1 and itself
-     assert(within(1.0, 0.0, 0.0001))
+    val userAverages = computeUserAverages2(train2)
+    val normalizedRatings = normalizeRatings(train2, userAverages)
+    val processedRatings = preProcessRatings2(normalizedRatings)
+
+    val knnSims = calculateParallelKnn(processedRatings, sc, 10)
+  
+    val predictor = fitParallelKnn(train2, sc, 10)
+    val maeKnn = evaluatePredictor(test2, predictor)
+
+      // Similarity between user 1 and itself
+     assert(within(knnSims(0,0), 0.0, 0.0001))
  
      // Similarity between user 1 and 864
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(knnSims(0, 863), 0.2423, 0.0001))
 
      // Similarity between user 1 and 886
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(knnSims(0,885), 0.0, 0.0001))
 
      // Prediction user 1 and item 1
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(predictor(0,0), 4.3191, 0.0001))
 
      // Prediction user 327 and item 2
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(predictor(326,1), 2.6994, 0.0001))
 
-     // MAE on test
-     assert(within(1.0, 0.0, 0.0001)) 
+     // MAE on test2
+     assert(within(maeKnn, 0.8287, 0.1)) 
    } 
 }

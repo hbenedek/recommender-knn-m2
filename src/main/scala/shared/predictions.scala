@@ -183,7 +183,7 @@ package object predictions
       val row = sims(u, ::).t.toArray.zipWithIndex
       val userKnn = row.sortWith(_._1 > _._1).slice(1, k+1).map(v => v._2)
       //val userKnn = argtopk(sims(u, ::).t,k+1).toArray.slice(1, k + 1)
-      for (v <- 0 until sims.rows) {
+      for (v <- 0 until sims.cols) {
         if (!userKnn.contains(v)) sims(u, v) = 0.0
       }
     }
@@ -312,7 +312,7 @@ package object predictions
      val knns = for {partition <- partitioned;
         val slice = preprocessed.toDense(partition.toSeq, ::).toDenseMatrix
         val cosSims = calculateCosineSimilarity(slice)
-        // ideally this coda below should return a list of (u,v, similarity) for each u in partition
+        // ideally this code below should return a list of (u,v, similarity) for each u in partition
         val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
                                                                 .toArray
                                                                 .zipWithIndex

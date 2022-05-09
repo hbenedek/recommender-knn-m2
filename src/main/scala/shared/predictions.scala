@@ -210,10 +210,11 @@ package object predictions
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings(normalizedRatings)
-    val t1 = System.nanoTime()
     val simsCos = calculateCosineSimilarity(preprocessedRatings)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos.copy)
-    println("KNN time: " + (System.nanoTime()-t1))
+    val p5 = partitionUsers(x.rows, 10, 2)(5)
+    println(p5.toSeq.mkString(", "))
+    println("User 0: " + simsCos(1, p5.toSeq.sortWith(_ < _)))
     val itemDevs = calculateItemDevs(normalizedRatings, x, simsKnn)    
 
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
@@ -301,8 +302,9 @@ package object predictions
      // in each partition we calculate cosine then knn similarly as we did before
      // NOTE: i tihnk here we should also aim for parallelization, not sure how to do that though
      val partitioned = partitionUsers(nbUsers, nbPartitions, replication)
+     /* ORIGINAL
      val knns = for {partition <- partitioned;
-        val slice = preprocessed.toDense(partition.toSeq, ::).toDenseMatrix
+        val slice = preprocessed.toDense(partition.toSeq.sortWith(_ < _), ::).toDenseMatrix
         val cosSims = calculateCosineSimilarity(slice)
         // ideally this code below should return a list of (u,v, similarity) for each u in partition
         val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
@@ -312,6 +314,28 @@ package object predictions
                                                                 .slice(1, k+1)
                                                                 .map(v => (u, v._2, v._1))).flatMap(x => x)
      } yield knn
+     */
+
+     //Modified. TLDR: In the original version the final matrix created by a partition
+     //would be 943 x 943, but only the first 250ish rows and columns would have a value (I think)
+     //Since the users 'u' and 'v' are mapped as (0 until cosSims.rows)
+     val knns = for {partition <- partitioned;
+        val slice = preprocessed.toDense(partition.toSeq.sortWith(_ < _), ::).toDenseMatrix
+        val cosSims = calculateCosineSimilarity(slice)
+        // ideally this code below should return a list of (u,v, similarity) for each u in partition
+        //DIFF: here we zip with the partition instead of using zipWithIndex.
+        //This is because using zipWithIndex will result in every partition having the same (u,v) pairs
+        val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
+                                                                .toArray
+                                                                .zip(partition.toSeq.sortWith(_ < _))
+                                                                .sortWith(_._1 > _._1)
+                                                                .slice(1, k+1)
+                                                                .map(v => (u, v._2, v._1))).flatMap(x => x)
+        //Similarly here we create a map to map the rows of the matrix to the actual users of the partition                                                        
+        val userMap = (0 until cosSims.rows).zip(partition.toSeq.sortWith(_ < _)).toMap
+        val knn2 = knn.map{case (u, v, s) => (userMap(u), v, s)}
+     } yield knn2
+
      // we need to merge all partitions and keep the top k elements from all users
      // so we group by user1 and somehow with clever index manipulation keep the k nearest neighbourss again
     val flattened = knns.flatMap(x => x)

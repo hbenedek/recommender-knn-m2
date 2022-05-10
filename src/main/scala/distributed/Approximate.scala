@@ -66,7 +66,7 @@ object Approximate {
     )
     val measurements = (1 to scala.math.max(1,conf.num_measurements()))
       .map(_ => timingInMs( () => {
-      val predictor = fitApproximateKnn(train, conf.k(), conf.replication(), conf.partitions())
+      val predictor = fitApproximateKnn(train, conf.k(), conf.replication(), conf.partitions(), sc)
       val mae = evaluatePredictor(test, predictor)
       mae
     }))
@@ -77,7 +77,7 @@ object Approximate {
     val normalizedRatings = normalizeRatings(train, userAvgs)
     val preprocessedRatings = preProcessRatings2(normalizedRatings)
 
-    val approxSims = calculateApproximateKnn(preprocessedRatings, conf.k(), conf.replication(), conf.partitions())
+    val approxSims = calculateApproximateKnn(preprocessedRatings, conf.k(), conf.replication(), conf.partitions(), sc)
 
     // Save answers as JSON
     def printToFile(content: String,

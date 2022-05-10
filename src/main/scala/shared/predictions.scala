@@ -284,19 +284,19 @@ package object predictions
   // Part AK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  def fitApproximateKnn(x: CSCMatrix[Double], k: Int, replication: Int, partition: Int): (Int, Int) => Double ={
+  def fitApproximateKnn(x: CSCMatrix[Double], k: Int, replication: Int, partition: Int, sc: SparkContext): (Int, Int) => Double ={
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
     val preprocessedRatings = preProcessRatings2(normalizedRatings)
 
     // here comes the new part: instead of calculating exact knns we return the approximated matrix
     // this is the only part which changes in the code
-    val approxKnnSims = calculateApproximateKnn(preprocessedRatings, k, replication, partition)
+    val approxKnnSims = calculateApproximateKnn(preprocessedRatings, k, replication, partition, sc)
     val itemDevs = calculateItemDevs(normalizedRatings, x, approxKnnSims.toDense)
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }
 
-  def calculateApproximateKnn(preprocessed: CSCMatrix[Double], k: Int, replication: Int, nbPartitions: Int): CSCMatrix[Double] = {
+  def calculateApproximateKnn(preprocessed: CSCMatrix[Double], k: Int, replication: Int, nbPartitions: Int, sc: SparkContext): CSCMatrix[Double] = {
      val nbUsers = preprocessed.rows
      // we use the practitioner function and iterate through the partitions
      // in each partition we calculate cosine then knn similarly as we did before
@@ -316,9 +316,24 @@ package object predictions
      } yield knn
      */
 
-     //Modified. TLDR: In the original version the final matrix created by a partition
+     //Modified. In the original version the final matrix created by a partition
      //would be 943 x 943, but only the first 250ish rows and columns would have a value (I think)
      //Since the users 'u' and 'v' are mapped as (0 until cosSims.rows)
+     val br = sc.broadcast(preprocessed.toDense)
+     val knns = sc.parallelize(partitioned).map(p => {
+       val r = br.value
+       val slice = r(p.toSeq.sortWith(_ < _), ::).toDenseMatrix
+       val cosSims = calculateCosineSimilarity(slice)
+       val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
+                                                                .toArray
+                                                                .zip(p.toSeq.sortWith(_ < _))
+                                                                .sortWith(_._1 > _._1)
+                                                                .slice(1, k+1)
+                                                                .map(v => (u, v._2, v._1))).flatMap(x => x)
+       val userMap = (0 until cosSims.rows).zip(p.toSeq.sortWith(_ < _)).toMap
+       knn.map{case (u, v, s) => (userMap(u), v, s)}
+     }).collect()
+     /* Non-Parallelised
      val knns = for {partition <- partitioned;
         val slice = preprocessed.toDense(partition.toSeq.sortWith(_ < _), ::).toDenseMatrix
         val cosSims = calculateCosineSimilarity(slice)
@@ -335,7 +350,7 @@ package object predictions
         val userMap = (0 until cosSims.rows).zip(partition.toSeq.sortWith(_ < _)).toMap
         val knn2 = knn.map{case (u, v, s) => (userMap(u), v, s)}
      } yield knn2
-
+     */
      // we need to merge all partitions and keep the top k elements from all users
      // so we group by user1 and somehow with clever index manipulation keep the k nearest neighbourss again
     val flattened = knns.flatMap(x => x)

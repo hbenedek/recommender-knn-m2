@@ -7,6 +7,7 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.SparkContext
 import ujson.Arr
 import java.io.File
+import breeze.util.partition
 
 
 package object predictions
@@ -295,6 +296,14 @@ package object predictions
     for ((u,v,s) <- flattened) {builder.add(u, v, s)}
     builder.result
   }
+
+  def evaluateReplications(replications: List[Int], x: CSCMatrix[Double], test: CSCMatrix[Double], k: Int, partitions: Int, sc: SparkContext):  Map[Int,Double] ={ 
+     replications.map(r => {
+       val predictor = fitApproximateKnn(x, k, r, partitions, sc)
+       (r, evaluatePredictor(test, predictor))
+      }).toMap
+    }
+
 }
 
 

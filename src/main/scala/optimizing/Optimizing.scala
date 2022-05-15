@@ -46,7 +46,7 @@ object Optimizing extends App {
     val test = loadSpark(sc, conf.test(), conf.separator(), conf.users(), conf.movies())
 
     val measurements = (1 to conf.num_measurements()).map(x => timingInMs(() => {
-      val predictor = fitKnnPredictor(train.copy, 10)
+      val predictor = fitKnnPredictor(train.copy, 300)
       val maeKnn = evaluatePredictor(test, predictor)
       maeKnn
     }))

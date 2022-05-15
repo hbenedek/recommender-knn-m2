@@ -39,25 +39,35 @@ class ApproximateTests extends AnyFunSuite with BeforeAndAfterAll {
       2 
     )
 
+    val userAvgs = computeUserAverages2(train2)
+    val normalizedRatings = normalizeRatings(train2, userAvgs)
+    val preprocessedRatings = preProcessRatings2(normalizedRatings)
+
+    val approxSims = calculateApproximateKnn(preprocessedRatings, 10, 2, 10, sc)
+
+    val predictor = fitApproximateKnn(train2, 10, 2, 10, sc)
+    val mae = evaluatePredictor(test2, predictor)
+
+
      // Similarity between user 1 and itself
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,0), 0.0, 0.0001))
  
      // Similarity between user 1 and 864
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,863), 0.0, 0.0001))
 
      // Similarity between user 1 and 344
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,343), 0.23659364388510976, 0.0001))
 
      // Similarity between user 1 and 16
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,15), 0.0, 0.0001))
 
      // Similarity between user 1 and 334
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,333), 0.19282239907090362, 0.0001))
 
      // Similarity between user 1 and 2
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(approxSims(0,1), 0.0, 0.0001))
 
      // MAE on test
-     assert(within(1.0, 0.0, 0.0001))
+     assert(within(mae, 0.8442713942674099, 0.0001))
    } 
 }

@@ -73,11 +73,18 @@ object Approximate {
     val mae = measurements(0)._1
     val timings = measurements.map(_._2)
 
+
+    //AK.1
     val userAvgs = computeUserAverages2(train)
     val normalizedRatings = normalizeRatings(train, userAvgs)
     val preprocessedRatings = preProcessRatings2(normalizedRatings)
 
     val approxSims = calculateApproximateKnn(preprocessedRatings, conf.k(), conf.replication(), conf.partitions(), sc)
+
+
+    //AK.2
+    val replications = List(1,2,3,4,6,8)
+    val maes = evaluateReplications(replications, train, test, 300, conf.partitions(), sc).toList.map{case (k,m)=>List(k,m)}
 
     // Save answers as JSON
     def printToFile(content: String,
@@ -115,7 +122,7 @@ object Approximate {
             "knn_u1v2" -> ujson.Num(approxSims(0,1))
           ),
           "AK.2" -> ujson.Obj(
-            "mae" -> ujson.Num(mae) 
+            "mae" -> mae
           ),
           "AK.3" -> ujson.Obj(
             "average (ms)" -> ujson.Num(mean(timings)),

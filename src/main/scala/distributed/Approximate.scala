@@ -122,7 +122,7 @@ object Approximate {
             "knn_u1v2" -> ujson.Num(approxSims(0,1))
           ),
           "AK.2" -> ujson.Obj(
-            "mae" -> mae
+            "mae" -> maes
           ),
           "AK.3" -> ujson.Obj(
             "average (ms)" -> ujson.Num(mean(timings)),

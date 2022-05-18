@@ -119,19 +119,6 @@ package object predictions
   def globalAvg(x: CSCMatrix[Double]): Double = {
     sum(x) / x.findAll(r => r != 0.0).size
   }
-
-  def computeUserAverages(ratings: CSCMatrix[Double]): Array[Double] = {
-    val sums = Array.fill(ratings.rows)(0.0)
-    val denominators = Array.fill(ratings.rows)(0.0)
-    //Only iterates over non-zeros
-    for ((k,v) <- ratings.activeIterator) {
-      val row = k._1
-      val col = k._2
-      sums(row) += v
-      denominators(row) += 1 
-    }
-    sums.zip(denominators).map{case (a, b) => a/b} 
-  }
   
   def computeUserAverages2(x: CSCMatrix[Double]): DenseVector[Double] = {
     val nonZeros = x.toDense(*,::).map(x => x.foldLeft(0.0)((acc, curr)=> if (curr!=0) acc + 1 else acc)).map(x => x.toDouble)
@@ -145,17 +132,6 @@ package object predictions
       y(k._1, k._2) = normalizedDeviation(v, averages(k._1))
     }
     y
-  }
-
-  def preProcessRatings(x: CSCMatrix[Double]): DenseMatrix[Double] ={
-    val y = new CSCMatrix.Builder[Double](rows=x.rows, cols=x.cols).result
-    val itemNorms = sqrt(sum(x.map(x => (x * x)).toDense, Axis._1))
-    for ((k,v) <- x.activeIterator){
-      y(k._1, k._2) = v / itemNorms(k._1)
-    }
-    y.toDense
-    //normalize(x.toDense, Axis._1, 2)
-    
   }
 
   def preProcessRatings2(x: CSCMatrix[Double]): CSCMatrix[Double] ={
@@ -192,8 +168,8 @@ package object predictions
   def fitKnnPredictor(x: CSCMatrix[Double], k: Int) : (Int, Int) => Double = {
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
-    val preprocessedRatings = preProcessRatings(normalizedRatings)
-    val simsCos = calculateCosineSimilarity(preprocessedRatings)
+    val preprocessedRatings = preProcessRatings2(normalizedRatings)
+    val simsCos = calculateCosineSimilarity(preprocessedRatings.toDense)
     val simsKnn = calculateKnnSimilarityFast(k, simsCos.copy)
     val itemDevs = calculateItemDevs(normalizedRatings, x, simsKnn)    
 

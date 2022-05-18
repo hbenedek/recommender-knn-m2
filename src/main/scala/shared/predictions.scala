@@ -147,8 +147,10 @@ package object predictions
     x * x.t
   } 
 
+  //For each user, find the top k most similar users
   def calculateKnnSimilarityFast(k: Int, sims: DenseMatrix[Double]): DenseMatrix[Double] = {
     for (u <- 0 until sims.rows){
+      //argtopk gives inconsistent results, so we manually find the topk users
       val row = sims(u, ::).t.toArray.zipWithIndex
       val userKnn = row.sortWith(_._1 > _._1).slice(1, k+1).map(v => v._2)
       //val userKnn = argtopk(sims(u, ::).t,k+1).toArray.slice(1, k + 1)
@@ -159,12 +161,15 @@ package object predictions
     sims
   }
 
+  //This function implements Equation 7 from Milestone 1
   def calculateItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: DenseMatrix[Double]): DenseMatrix[Double] = {
+    //If a user has not rated an item, then ignore it. This is what the denominator does
     val indicator = x.toDense.map(v => if (v != 0.0) 1.0 else 0.0)
     val itemDevs = (sims * xNormalized.toDense) /:/ (abs(sims) * indicator)
     itemDevs.map(v => if (v.isNaN()) 0.0 else v)
     }
 
+  //Returns the KNN predictor function. Returns the predicted rating given a user and item
   def fitKnnPredictor(x: CSCMatrix[Double], k: Int) : (Int, Int) => Double = {
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
@@ -176,6 +181,7 @@ package object predictions
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }
 
+  //Calculate the MAE for a predictor
   def evaluatePredictor(test: CSCMatrix[Double], predictor: (Int, Int) => Double): Double = {
     val errors = (for ((k,v) <- test.activeIterator) yield (predictor(k._1, k._2) - v).abs).toList
     errors.reduce(_ + _) / errors.size
@@ -185,12 +191,14 @@ package object predictions
   // Part EK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  //Implements Algorithm 1 from Milestone 2. Calculates the KNN similarities in parallel
   def calculateParallelKnn(xPreprocessed: CSCMatrix[Double], sc: SparkContext, k: Int): CSCMatrix[Double] = {
     val nbUsers = xPreprocessed.rows
     val broadcast = sc.broadcast(xPreprocessed.toDense)
     val topks = sc.parallelize(0 to nbUsers - 1).mapPartitions(iter => for {u <- iter;
       val r = broadcast.value
       val sims = r * r.t(::,u)
+      //We don't use argtopk as it returns inconsistent results
       val knn = sims.toArray.zipWithIndex.sortWith(_._1 > _._1).slice(1, k+1).map(v => (u, v._2, sims(v._2)))
     } yield knn).collect().flatMap(x => x)
     
@@ -199,6 +207,8 @@ package object predictions
     builder.result
   }
 
+  //We tried parallelising the Item Deviations as well, however this slowed down our implementation.
+  //We don't use this function
   def calculateParallelItemDevs(xNormalized: CSCMatrix[Double], x: CSCMatrix[Double], sims: CSCMatrix[Double], sc: SparkContext): CSCMatrix[Double] = {
     val xBroadcast = sc.broadcast(x.toDense)
     val xNormalizedBroadcast = sc.broadcast(xNormalized.toDense)
@@ -215,6 +225,7 @@ package object predictions
     builder.result
     }
 
+   //Returns the parallel KNN predictor function 
    def fitParallelKnn(x: CSCMatrix[Double], sc: SparkContext, k: Int): (Int, Int) => Double ={
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
@@ -231,6 +242,7 @@ package object predictions
   // Part AK
   /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  //Returns the Approximate KNN predictor function 
   def fitApproximateKnn(x: CSCMatrix[Double], k: Int, replication: Int, partition: Int, sc: SparkContext): (Int, Int) => Double ={
     val userAvgs = computeUserAverages2(x)
     val normalizedRatings = normalizeRatings(x, userAvgs)
@@ -240,24 +252,31 @@ package object predictions
     (u: Int, i: Int) => predict(userAvgs(u), itemDevs(u,i))
   }
 
+  //Returns the approximated similarity matrix
   def calculateApproximateKnn(preprocessed: CSCMatrix[Double], k: Int, replication: Int, nbPartitions: Int, sc: SparkContext): CSCMatrix[Double] = {
      val nbUsers = preprocessed.rows
      val partitioned = partitionUsers(nbUsers, nbPartitions, replication)
      val br = sc.broadcast(preprocessed.toDense)
+     //For each partition, calculate the user similarity matrix, and find the KNN
      val knns = sc.parallelize(partitioned).map(p => {
        val r = br.value
        val slice = r(p.toSeq.sortWith(_ < _), ::).toDenseMatrix
        val cosSims = calculateCosineSimilarity(slice)
+       //We don't use argtopk as it gives inconsistent results
        val knn = (0 until cosSims.rows).toList.map(u => cosSims(u, ::).t
                                                                 .toArray
                                                                 .zip(p.toSeq.sortWith(_ < _))
                                                                 .sortWith(_._1 > _._1)
                                                                 .slice(1, k+1)
                                                                 .map(v => (u, v._2, v._1))).flatMap(x => x)
+       //We want to place the users at the correct index in the output matrix
+       //so map the row indices to the user values in the partition                                                         
        val userMap = (0 until cosSims.rows).zip(p.toSeq.sortWith(_ < _)).toMap
        knn.map{case (u, v, s) => (userMap(u), v, s)}
      }).collect()
-   
+    
+    //When there are multiple replications, we groupby the users and find the 
+    //K most similar users across the partitions
     val flattened = knns.flatMap(x => x)
                         .groupBy(x => x._1)
                         .map(x => x._2.map(y => (y._2, y._3))
@@ -273,6 +292,7 @@ package object predictions
     builder.result
   }
 
+  //Helper function for AK2.
   def evaluateReplications(replications: List[Int], x: CSCMatrix[Double], test: CSCMatrix[Double], k: Int, partitions: Int, sc: SparkContext):  Map[Int,Double] ={ 
      replications.map(r => {
        val predictor = fitApproximateKnn(x, k, r, partitions, sc)

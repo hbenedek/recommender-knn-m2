@@ -55,7 +55,7 @@ object Optimizing extends App {
 
     val userAverages = computeUserAverages2(train)
     val normalizedRatings = normalizeRatings(train, userAverages)
-    val processedRatings = preProcessRatings(normalizedRatings)
+    val processedRatings = preProcessRatings2(normalizedRatings).toDense
     val sims = calculateCosineSimilarity(processedRatings)
     println("Calculating kNN sims...")
     val knnSims = calculateKnnSimilarityFast(10, sims)
